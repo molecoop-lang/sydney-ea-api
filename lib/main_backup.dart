@@ -18,7 +18,7 @@ class SydneyAIMaster extends StatefulWidget {
 }
 
 class _SydneyAIMasterState extends State<SydneyAIMaster> {
-  String bridgeIp = 'https://sydney-ea-api-1.onrender.com';
+  String bridgeIp = '192.168.0.135';
 
   void updateBridgeIp(String ip) {
     setState(() {
@@ -68,7 +68,7 @@ class MT5BridgeService {
     }
 
     if (ip.startsWith('https://')) {
-      return ip;
+      return '$ip:8080';
     }
 
     return 'http://$ip:8080';
@@ -1305,7 +1305,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   controller: ipController,
                   keyboardType: TextInputType.url,
                   decoration: InputDecoration(
-                    hintText: 'https://sydney-ea-api-1.onrender.com',
+                    hintText: '192.168.0.135',
                     prefixIcon: const Icon(Icons.lan),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
