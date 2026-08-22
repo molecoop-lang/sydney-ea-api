@@ -61,17 +61,12 @@ class MT5BridgeService {
   MT5BridgeService(this.bridgeIp);
 
   String get baseUrl {
-    String ip = bridgeIp.trim();
-
-    if (ip.startsWith('http://')) {
-      return '$ip:8080';
+    final value = bridgeIp.trim();
+    if (value.isEmpty) return 'https://sydney-ea-api-1.onrender.com';
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value.endsWith('/') ? value.substring(0, value.length - 1) : value;
     }
-
-    if (ip.startsWith('https://')) {
-      return ip;
-    }
-
-    return 'http://$ip:8080';
+    return 'http://$value:8080';
   }
 
   Future<Map<String, dynamic>> getEndpoint(String endpoint) async {
@@ -104,6 +99,10 @@ class MT5BridgeService {
     return getEndpoint('/api/account');
   }
 
+  Future<Map<String, dynamic>> getAccountDetails() {
+    return getEndpoint('/api/account');
+  }
+
   Future<Map<String, dynamic>> getEA() {
     return getEndpoint('/api/ea');
   }
@@ -114,6 +113,10 @@ class MT5BridgeService {
 
   Future<Map<String, dynamic>> getTrades() {
     return getEndpoint('/api/trades');
+  }
+
+  Future<Map<String, dynamic>> scanMarket() {
+    return getEndpoint('/api/scan');
   }
 }
 
@@ -735,6 +738,7 @@ class AIScannerPage extends StatefulWidget {
 class _AIScannerPageState extends State<AIScannerPage> {
   Map<String, dynamic>? signal;
   bool loading = true;
+  bool scanning = false;
   String? error;
 
   @override
@@ -759,6 +763,28 @@ class _AIScannerPageState extends State<AIScannerPage> {
       setState(() {
         error = '$e';
         loading = false;
+      });
+    }
+  }
+
+  Future<void> scanMarket() async {
+    setState(() {
+      scanning = true;
+      error = null;
+    });
+    try {
+      final result = await widget.bridge.scanMarket();
+      if (!mounted) return;
+      setState(() {
+        signal = result;
+        scanning = false;
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        scanning = false;
+        error = '$e';
       });
     }
   }
@@ -823,6 +849,21 @@ class _AIScannerPageState extends State<AIScannerPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: scanning ? null : scanMarket,
+              icon: scanning
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.radar),
+              label: Text(scanning ? 'SCANNING MARKET...' : 'SCAN MARKET'),
+            ),
+          ),
+          const SizedBox(height: 16),
           appCard(
             child: Column(
               children: [
@@ -1086,48 +1127,42 @@ class _MT5PageState extends State<MT5Page> {
 
                     appCard(
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'MT5 Account',
+                          Row(
+                            children: [
+                              const Icon(Icons.account_balance, color: Colors.blueAccent, size: 30),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'MT5 Account',
+                                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              statusDot(connected),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            connected ? 'MT5 TERMINAL CONNECTED' : 'MT5 TERMINAL OFFLINE',
                             style: TextStyle(
-                              fontSize: 20,
+                              color: connected ? Colors.greenAccent : Colors.redAccent,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-
                           const SizedBox(height: 15),
-
-                          settingRow(
-                            'Broker',
-                            '${account?['broker'] ?? '-'}',
-                          ),
-
-                          settingRow(
-                            'Platform',
-                            '${account?['platform'] ?? '-'}',
-                          ),
-
-                          settingRow(
-                            'Symbol',
-                            '${account?['symbol'] ?? '-'}',
-                          ),
-
-                          settingRow(
-                            'Timeframe',
-                            '${account?['timeframe'] ?? '-'}',
-                          ),
-
-                          settingRow(
-                            'Balance',
-                            'R${account?['balance'] ?? 0}',
-                          ),
-
-                          settingRow(
-                            'Equity',
-                            'R${account?['equity'] ?? 0}',
-                          ),
+                          settingRow('Broker', '${account?['broker'] ?? '-'}'),
+                          settingRow('Server', '${account?['server'] ?? '-'}'),
+                          settingRow('Account', '${account?['login'] ?? account?['account'] ?? '-'}'),
+                          settingRow('Currency', '${account?['currency'] ?? '-'}'),
+                          settingRow('Platform', '${account?['platform'] ?? 'MetaTrader 5'}'),
+                          settingRow('Symbol', '${account?['symbol'] ?? '-'}'),
+                          settingRow('Timeframe', '${account?['timeframe'] ?? '-'}'),
+                          settingRow('Balance', '${account?['balance'] ?? 0}'),
+                          settingRow('Equity', '${account?['equity'] ?? 0}'),
+                          settingRow('Free Margin', '${account?['free_margin'] ?? 0}'),
+                          settingRow('Margin', '${account?['margin'] ?? 0}'),
+                          settingRow('Leverage', '1:${account?['leverage'] ?? 0}'),
                         ],
                       ),
                     ),
@@ -1207,7 +1242,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
     if (ip.isEmpty) {
       setState(() {
-        testResult = 'Please enter the PC IP address.';
+        testResult = 'Please enter the bridge URL.';
       });
       return;
     }
@@ -1240,8 +1275,7 @@ class _SettingsPageState extends State<SettingsPage> {
         testing = false;
         testResult =
             'CONNECTION FAILED\n\n'
-            'Check that the Python bridge is running and '
-            'the phone and PC are on the same Wi-Fi network.';
+            'Check the Render bridge URL and try again.';
       });
     }
   }
@@ -1290,7 +1324,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     SizedBox(width: 10),
                     Text(
-                      'PC Bridge IP Address',
+                      'Cloud Bridge URL',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.bold,

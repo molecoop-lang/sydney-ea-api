@@ -14,6 +14,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 MAX_EA_BYTES = 8 * 1024 * 1024
 
 EA_DATA = {"connected": False, "ea": "GhostkillerPro", "last_heartbeat": None, "data": {}}
+MT5_ACCOUNT = {"connected": False, "last_update": None, "data": {}}
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
@@ -62,10 +63,37 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self.send_json({"service": "Sydney AI Master MT5 Bridge", "status": "online", "mode": "cloud-bridge", "ea": EA_DATA["ea"], "time": utc_now()})
             return
         if path == "/api/status":
-            self.send_json({"connected": EA_DATA["connected"], "mode": "cloud-bridge", "mt5": "connected" if EA_DATA["connected"] else "waiting_for_ea", "ea": EA_DATA["ea"], "time": EA_DATA["last_heartbeat"]})
+            mt5_connected = MT5_ACCOUNT["connected"]
+            self.send_json({
+                "connected": mt5_connected or EA_DATA["connected"],
+                "mt5_connected": mt5_connected,
+                "ea_connected": EA_DATA["connected"],
+                "mode": "cloud-bridge",
+                "mt5": "connected" if mt5_connected else ("waiting_for_mt5"),
+                "ea": EA_DATA["ea"],
+                "time": MT5_ACCOUNT["last_update"] or EA_DATA["last_heartbeat"]
+            })
             return
         if path == "/api/account":
-            self.send_json({"broker": data.get("broker", "MT5"), "platform": "MetaTrader 5", "symbol": data.get("symbol", "XAUUSD"), "timeframe": data.get("timeframe", "M5"), "balance": data.get("balance", 0), "equity": data.get("equity", 0), "currency": data.get("currency", "")})
+            account = MT5_ACCOUNT["data"]
+            self.send_json({
+                "connected": MT5_ACCOUNT["connected"],
+                "broker": account.get("broker", data.get("broker", "MT5")),
+                "server": account.get("server", ""),
+                "login": account.get("login", ""),
+                "account": account.get("login", ""),
+                "platform": "MetaTrader 5",
+                "symbol": data.get("symbol", account.get("symbol", "XAUUSD")),
+                "timeframe": data.get("timeframe", account.get("timeframe", "M5")),
+                "balance": account.get("balance", data.get("balance", 0)),
+                "equity": account.get("equity", data.get("equity", 0)),
+                "currency": account.get("currency", data.get("currency", "")),
+                "margin": account.get("margin", 0),
+                "free_margin": account.get("free_margin", 0),
+                "leverage": account.get("leverage", 0),
+                "terminal_connected": account.get("terminal_connected", False),
+                "last_update": MT5_ACCOUNT["last_update"]
+            })
             return
         if path == "/api/ea":
             self.send_json({"name": EA_DATA["ea"], "running": EA_DATA["connected"], "symbol": data.get("symbol", "XAUUSD"), "timeframe": data.get("timeframe", "M5"), "lot_size": data.get("lot_size", 0), "open_trades": data.get("open_trades", 0)})
@@ -191,6 +219,22 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 self.send_json(upload)
             except Exception as error:
                 self.send_json({"error": str(error)}, 400)
+            return
+        if path == "/api/mt5/account":
+            if not self.authorized():
+                self.send_json({"error": "Unauthorized"}, 401); return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                raw = self.rfile.read(length)
+                payload = json.loads(raw.decode("utf-8")) if raw else {}
+                if not isinstance(payload, dict):
+                    raise ValueError("Account telemetry must be a JSON object")
+                MT5_ACCOUNT["connected"] = bool(payload.get("connected", True))
+                MT5_ACCOUNT["last_update"] = utc_now()
+                MT5_ACCOUNT["data"] = payload
+                self.send_json({"ok": True, "connected": MT5_ACCOUNT["connected"], "time": MT5_ACCOUNT["last_update"]})
+            except Exception as error:
+                self.send_json({"ok": False, "error": str(error)}, 400)
             return
         if path != "/api/ea/heartbeat":
             self.send_json({"error": "POST endpoint not found", "path": path}, 404); return
